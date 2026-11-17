@@ -1,0 +1,4 @@
+interface:
+  display_name: "产品需求文档"
+  short_description: "按个人文风撰写增量 PRD，支持语雀导入文件和逐行复制 HTML"
+  default_prompt: "使用 $product-requirements 根据这些材料整理本次产品需求，按我的文风校验范围和规则，并按我指定的格式交付。"

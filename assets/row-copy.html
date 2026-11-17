@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>__TITLE__</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#253044;font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;font-size:14px;line-height:1.8}.document{max-width:1480px;margin:24px auto;padding:28px 36px 48px;background:white;border:1px solid #e2e6ec;border-radius:4px}.document-title{font-size:22px;font-weight:600;margin:0}.copy-hint{margin:6px 0 24px;color:#758094;font-size:13px}h1{font-size:22px;margin:32px 0 14px;padding-bottom:8px;border-bottom:1px solid #dfe5ed}h2{font-size:19px;margin:28px 0 12px}h3{font-size:16px;margin:24px 0 10px}p{margin:10px 0}ol{margin:0;padding-left:24px}li+li{margin-top:6px}.table-wrap{margin:14px 0 24px;overflow-x:auto}table{border-collapse:collapse;width:100%;background:white}th,td{border:1px solid #dfe4ec;padding:12px 14px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f4f8;font-weight:600;color:#334158}table.requirements td:first-child,table.requirements th:first-child{width:13%;min-width:130px}table.requirements td:nth-child(2),table.requirements th:nth-child(2){width:72%;min-width:480px}table.requirements td:nth-child(3),table.requirements th:nth-child(3){width:6%;min-width:60px}.copy-control{width:100px;min-width:100px;text-align:center!important;user-select:none}.copy-row{white-space:nowrap;font:inherit;font-size:12px;line-height:1.5;border:1px solid #ccd7e8;border-radius:3px;background:#fff;color:#2458cc;padding:6px 10px;cursor:pointer}.copy-row:hover{background:#edf3ff;border-color:#89a9ed}.copy-row:focus-visible{outline:2px solid #2458cc;outline-offset:2px}.copy-row:disabled{opacity:.65;cursor:wait}#copy-status{position:fixed;right:24px;bottom:24px;background:#253044;color:#fff;padding:8px 16px;border-radius:4px;box-shadow:0 3px 14px #0002;display:none;max-width:calc(100% - 48px)}#copy-status.visible{display:block}@media(max-width:900px){.document{margin:0;padding:20px 16px;border:0;border-radius:0}body{background:#fff}}@media print{body{background:#fff}.document{border:0;margin:0;padding:0}.copy-control,.copy-hint,#copy-status{display:none!important}.table-wrap{overflow:visible}thead{display:table-header-group}h1,h2,h3{break-after:avoid}}
+</style></head><body><main class="document"><div class="document-title">__TITLE__</div><p class="copy-hint">点击“复制本行”，在语雀表格目标行的第一格粘贴。保留各列及 Markdown 的有序列表、加粗和换行；目标行已有内容时会被替换。</p>__CONTENT__</main><div id="copy-status" role="status" aria-live="polite"></div>
+<script>
+let statusTimer;
+function showStatus(message){const status=document.getElementById('copy-status');status.textContent=message;status.classList.add('visible');clearTimeout(statusTimer);statusTimer=setTimeout(()=>status.classList.remove('visible'),2500);}
+function copyPayload(row){
+  const count=Number(row.closest('table').dataset.sourceColumns);
+  const cells=Array.from(row.cells).slice(0,count);
+  const paragraphs=cells.map(c=>{const list=c.querySelector(':scope>ol');return list?Array.from(list.children).map((item,i)=>`${i+1}. ${item.innerText.trim()}`):[c.innerText.trim().replace(/\r/g,'')];});
+  const table=document.createElement('table');table.style.borderCollapse='collapse';
+  const target=table.insertRow();
+  for(const original of cells){const cloned=original.cloneNode(true);cloned.style.border='1px solid #dfe4ec';cloned.style.padding='8px 12px';cloned.style.verticalAlign='top';target.appendChild(cloned);}
+  const text=paragraphs.map(items=>items.join('\n')).join('\t');
+  // Format observed from Yuque's native row copy. Plain HTML is flattened into
+  // one cell by its editor; the fragment identifies the copied table grid.
+  let nodeIndex=0;const prefix='copy'+Date.now().toString(36);
+  const node=(name,children=[],attrs={})=>({type:'element',id:prefix+(nodeIndex++),name,attrs,children});
+  const textNode=(data,attrs={})=>({type:'text',id:prefix+(nodeIndex++),name:'#text',attrs,data});
+  const inlineNodes=(element,marks={})=>Array.from(element.childNodes).flatMap(child=>{
+    if(child.nodeType===Node.TEXT_NODE)return child.textContent?[textNode(child.textContent,{...marks})]:[];
+    if(child.nodeType!==Node.ELEMENT_NODE)return [];
+    const next={...marks};if(child.tagName==='STRONG'||child.tagName==='B')next.bold=true;
+    return inlineNodes(child,next);
+  });
+  const cellNodes=cell=>{
+    const list=cell.querySelector(':scope>ol');
+    if(list){
+      // Yuque stores each list item as an oli block sharing its list/fid.
+      // This shape was captured from an actual native ordered-list row copy.
+      const listId=prefix+(nodeIndex++),fid=prefix+(nodeIndex++);
+      return Array.from(list.children).map((item,index)=>node('oli',inlineNodes(item),{indexType:0,list:listId,fid,parentIndex:[],index,indexStyle:{}}));
+    }
+    const blocks=[];let children=[];
+    for(const child of cell.childNodes){
+      if(child.nodeType===Node.ELEMENT_NODE&&child.tagName==='BR'){blocks.push(node('p',children));children=[];}
+      else if(child.nodeType===Node.TEXT_NODE){if(child.textContent)children.push(textNode(child.textContent));}
+      else if(child.nodeType===Node.ELEMENT_NODE){const marks={};if(child.tagName==='STRONG'||child.tagName==='B')marks.bold=true;children.push(...inlineNodes(child,marks));}
+    }
+    blocks.push(node('p',children));return blocks;
+  };
+  const grid=node('table',[node('tr',cells.map((cell,col)=>node('td',cellNodes(cell),{col})),{height:37})],{rowCount:1,colCount:count,colWidths:cells.map(c=>Math.max(60,Math.round(c.getBoundingClientRect().width)))});
+  grid.id='';grid.children[0].id='';
+  const fragment={type:'fragment',name:'#fragment',children:[grid],attrs:{}};
+  const html=`<ne-clipboard data="${encodeURIComponent(JSON.stringify(fragment))}" source="${encodeURIComponent(location.href)}"></ne-clipboard><div class="lake-content" typography="classic">${table.outerHTML}</div>`;
+  return {html,text,table,inode:JSON.stringify(fragment),lake:table.outerHTML};
+}
+function legacyCopy(payload){
+  const box=document.createElement('div');box.contentEditable='true';box.style.cssText='position:fixed;left:-9999px;top:0';box.appendChild(payload.table);document.body.appendChild(box);
+  const selection=window.getSelection();const previous=[];for(let i=0;i<selection.rangeCount;i++)previous.push(selection.getRangeAt(i).cloneRange());
+  const range=document.createRange();range.selectNodeContents(box);selection.removeAllRanges();selection.addRange(range);
+  let formatsWritten=false;
+  const onCopy=event=>{
+    try{
+      if(event.clipboardData){
+        event.clipboardData.setData('text/html',payload.html);
+        event.clipboardData.setData('text/plain',payload.text);
+        event.clipboardData.setData('text/ne-inode',payload.inode);
+        event.clipboardData.setData('text/lake',payload.lake);
+        formatsWritten=event.clipboardData.getData('text/ne-inode')===payload.inode&&event.clipboardData.getData('text/lake')===payload.lake;
+      }
+    }catch{formatsWritten=false;}
+    finally{event.preventDefault();event.stopImmediatePropagation();}
+  };
+  document.addEventListener('copy',onCopy,true);let success=false;
+  try{success=document.execCommand('copy');}finally{document.removeEventListener('copy',onCopy,true);box.remove();selection.removeAllRanges();previous.forEach(r=>selection.addRange(r));}
+  if(!success||!formatsWritten)throw Error('copy failed');
+}
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('.copy-row');if(!button)return;
+  const payload=copyPayload(button.closest('tr'));button.disabled=true;
+  try{
+    // ClipboardItem supports standard formats only; Yuque's table-grid MIME
+    // types must be written through the copy event to survive a real Ctrl+V.
+    legacyCopy(payload);
+    showStatus('本行已复制');
+  }catch{showStatus('复制失败，请用 Chromium 浏览器打开并重试。');}
+  finally{button.disabled=false;button.focus({preventScroll:true});}
+});
+</script></body></html>
